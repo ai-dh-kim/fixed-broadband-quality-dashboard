@@ -31,7 +31,7 @@ const CHROME = {
   light: { fore: '#555555', grid: '#e0e0e0' },
 };
 
-interface PointMeta { total: number; trimmed: number; retained: number; low: boolean; }
+interface PointMeta { total: number | null; trimmed: number | null; retained: number | null; low: boolean; }
 type DataPoint = { x: number; y: number | null; meta: PointMeta };
 
 export default function MetricChart({ metricId, data, selectedIsps, view, range, sinceMs, theme, colorIndex }: Props) {

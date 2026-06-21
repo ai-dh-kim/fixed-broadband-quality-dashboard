@@ -65,17 +65,19 @@ export function isLowSample(keptCount: number, tier: keyof typeof SAMPLE_THRESHO
 export interface AggregateResult {
   mean: number | null;
   median: number | null;
-  totalSamples: number;
-  kept: number;
-  trimmedSamples: number;
-  retainedRatio: number;
+  totalSamples: number | null;
+  kept: number | null;
+  trimmedSamples: number | null;
+  retainedRatio: number | null;
   lowSample: boolean;
 }
 
 // 이미 집계된 버킷들을 더 큰 뷰(시간/일)로 재집계. 버킷 평균을 절단하고
 // 샘플 카운트를 합산해 재집계 후에도 추적성 유지 (FR-03 + NFR).
+// 표본 수가 미상(null)인 버킷(percentile 기반 실데이터)은 카운트를 합산하지 않고
+// "미상"으로 전파하며 저표본 경고를 띄우지 않는다.
 export function aggregateBuckets(
-  buckets: { mean: number | null; totalSamples: number; kept: number }[],
+  buckets: { mean: number | null; totalSamples: number | null; kept: number | null }[],
   tier: keyof typeof SAMPLE_THRESHOLD
 ): AggregateResult {
   const valued = buckets.filter((b) => b && b.mean != null);
@@ -84,6 +86,11 @@ export function aggregateBuckets(
   }
   const means = valued.map((b) => b.mean as number);
   const agg = trimmedStats(means);
+  const hasCounts = valued.every((b) => b.totalSamples != null && b.kept != null);
+  if (!hasCounts) {
+    // 표본 수 미상 → 카운트 null, 저표본 경고 없음.
+    return { mean: agg.mean, median: agg.median, totalSamples: null, kept: null, trimmedSamples: null, retainedRatio: null, lowSample: false };
+  }
   const totalSamples = buckets.reduce((s, b) => s + (b?.totalSamples || 0), 0);
   const keptSamples = buckets.reduce((s, b) => s + (b?.kept || 0), 0);
   return {

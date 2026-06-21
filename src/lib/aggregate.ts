@@ -7,14 +7,18 @@ import type { DisplayPoint } from '../types.ts';
 import type { ViewDef } from '../config.ts';
 
 function displayFromRaw(p: BasePoint, threshTier: 'fine' | 'mid' | 'coarse'): DisplayPoint {
+  // 표본 수 미상(null)이면 추적성 필드는 null, 저표본 경고는 띄우지 않음.
+  const hasCounts = p.total != null && p.kept != null;
+  const total = p.total as number;
+  const kept = p.kept as number;
   return {
     t: p.t,
     v: p.mean as number,
     total: p.total,
     kept: p.kept,
-    trimmed: p.total - p.kept,
-    retained: p.total ? p.kept / p.total : 0,
-    low: isLowSample(p.kept, threshTier),
+    trimmed: hasCounts ? total - kept : null,
+    retained: hasCounts ? (total ? kept / total : 0) : null,
+    low: hasCounts ? isLowSample(kept, threshTier) : false,
   };
 }
 

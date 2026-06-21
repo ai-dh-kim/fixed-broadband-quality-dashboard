@@ -155,6 +155,82 @@ function synthAggregate(ispId: string, groupId: string, metricId: string, t: num
   return { mean: round(mean), n, k };
 }
 
+// ---- Cloudflare Radar IQI 실데이터 어댑터 (실연동) ----
+// CLOUDFLARE_API_TOKEN 이 있으면 IQI에서 ASN별 percentile을 받아 실데이터로 채운다.
+//   latency ← LATENCY p50 / bandwidth ← BANDWIDTH p50 / p25Throughput ← BANDWIDTH p25
+// IQI는 표본 수를 제공하지 않으므로 해당 셀의 n/k는 null(미상). 실패/부재 시 시뮬 폴백.
+// IQI 최대 이력 ~90일 → coarse(365일)는 최근 90일만 실데이터.
+const CF_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
+const CF_API = 'https://api.cloudflare.com/client/v4/radar/quality/iqi/timeseries_groups';
+const CF_METRIC_FIELD: Record<string, 'latency' | 'bandwidth' | 'p25'> = {
+  latency: 'latency', bandwidth: 'bandwidth', p25Throughput: 'p25',
+};
+interface CfTierData { latency: Map<number, number>; bandwidth: Map<number, number>; p25: Map<number, number>; }
+const cfLog = { done: false };
+const isoSec = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+async function cfTimeseries(
+  asns: string[], metric: 'LATENCY' | 'BANDWIDTH', aggInterval: string,
+  dateStart: string, dateEnd: string, stepMs: number,
+): Promise<{ p50: Map<number, number>; p25: Map<number, number> }> {
+  const url = new URL(CF_API);
+  url.searchParams.set('metric', metric);
+  url.searchParams.set('asn', asns.map((a) => a.replace(/^AS/i, '')).join(','));
+  url.searchParams.set('aggInterval', aggInterval);
+  url.searchParams.set('dateStart', dateStart);
+  url.searchParams.set('dateEnd', dateEnd);
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${CF_TOKEN}` } });
+  if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 160)}`);
+  const json: any = await res.json();
+  const serie = json?.result?.serie_0;
+  if (!serie || !Array.isArray(serie.timestamps)) throw new Error('no serie_0');
+  if (!cfLog.done) {
+    console.log(`[cf] meta=${JSON.stringify(json.result?.meta)}`);
+    console.log(`[cf] serieKeys=${Object.keys(serie)} firstP50=${serie.p50?.[0]} firstP25=${serie.p25?.[0]}`);
+    cfLog.done = true;
+  }
+  const p50 = new Map<number, number>();
+  const p25 = new Map<number, number>();
+  const a50: unknown[] = serie.p50 ?? [];
+  const a25: unknown[] = serie.p25 ?? [];
+  serie.timestamps.forEach((ts: string, i: number) => {
+    const bucket = Math.floor(new Date(ts).getTime() / stepMs) * stepMs;
+    if (a50[i] != null) p50.set(bucket, Number(a50[i]));
+    if (a25[i] != null) p25.set(bucket, Number(a25[i]));
+  });
+  return { p50, p25 };
+}
+
+// cfCache[ispId][tierKey] = CfTierData. mid/coarse만 채운다(fine은 IQI 최소 간격 15분과 그리드 불일치로 시뮬 유지).
+async function buildCfCache(now: number): Promise<Record<string, Partial<Record<TierKey, CfTierData>>>> {
+  const cache: Record<string, Partial<Record<TierKey, CfTierData>>> = {};
+  if (!CF_TOKEN) { console.log('[cf] CLOUDFLARE_API_TOKEN 없음 → 전부 시뮬레이션'); return cache; }
+  const tiers: { key: TierKey; agg: string; days: number; stepMs: number }[] = [
+    { key: 'mid', agg: '1h', days: 30, stepMs: 60 * 60 * 1000 },
+    { key: 'coarse', agg: '1d', days: 90, stepMs: DAY },
+  ];
+  let ok = 0, fail = 0;
+  for (const isp of ALL_ISPS) {
+    cache[isp.id] = {};
+    for (const t of tiers) {
+      const ds = isoSec(now - t.days * DAY);
+      const de = isoSec(now);
+      const data: CfTierData = { latency: new Map(), bandwidth: new Map(), p25: new Map() };
+      try {
+        const lat = await cfTimeseries(isp.asns, 'LATENCY', t.agg, ds, de, t.stepMs);
+        data.latency = lat.p50; ok++;
+      } catch (e) { fail++; console.warn(`[cf] ${isp.id}/${t.key}/LATENCY skip: ${(e as Error).message}`); }
+      try {
+        const bw = await cfTimeseries(isp.asns, 'BANDWIDTH', t.agg, ds, de, t.stepMs);
+        data.bandwidth = bw.p50; data.p25 = bw.p25; ok++;
+      } catch (e) { fail++; console.warn(`[cf] ${isp.id}/${t.key}/BANDWIDTH skip: ${(e as Error).message}`); }
+      cache[isp.id][t.key] = data;
+    }
+  }
+  console.log(`[cf] IQI 호출 완료 ok=${ok} fail=${fail}`);
+  return cache;
+}
+
 // ---- 티어 조립 ----
 interface TierGen { key: TierKey; baseMin: number; days: number; }
 const TIER_GEN: TierGen[] = [
@@ -174,6 +250,9 @@ function timeAxis(now: number, baseMin: number, days: number): number[] {
 async function main() {
   const now = Math.floor(Date.now() / GRID_MS) * GRID_MS;
   console.log('[mock] generating single multi-tier quality_data.json …');
+
+  const cf = await buildCfCache(now); // 토큰 있으면 실데이터, 없으면 빈 캐시(시뮬)
+  let live = 0;
 
   const tiers: QualityData['tiers'] = {
     fine: { baseMin: TIER_BASE_MIN.fine, t: [] },
@@ -201,9 +280,17 @@ async function main() {
             n.push(s.totalSamples);
             k.push(s.kept);
           } else {
-            const rand = rng(`${isp.id}|${metric.id}|${g.key}|${t}`);
-            const a = synthAggregate(isp.id, isp.groupId, metric.id, t, g.key, rand);
-            v.push(a.mean); n.push(a.n); k.push(a.k);
+            // 실데이터(Cloudflare IQI) 우선, 없으면 시뮬 폴백. 실데이터 셀은 표본 수 미상(n/k=null).
+            const field = CF_METRIC_FIELD[metric.id];
+            const real = field ? cf[isp.id]?.[g.key]?.[field]?.get(t) : undefined;
+            if (real != null && Number.isFinite(real)) {
+              const clamped = Math.min(Math.max(real, metric.hard.min), metric.hard.max);
+              v.push(round(clamped)); n.push(null); k.push(null); live++;
+            } else {
+              const rand = rng(`${isp.id}|${metric.id}|${g.key}|${t}`);
+              const a = synthAggregate(isp.id, isp.groupId, metric.id, t, g.key, rand);
+              v.push(a.mean); n.push(a.n); k.push(a.k);
+            }
           }
           points++;
         }
@@ -215,7 +302,8 @@ async function main() {
 
   const payload: QualityData = {
     generatedAt: new Date().toISOString(),
-    mode: 'sim',
+    mode: live > 0 ? 'live' : 'sim', // 실데이터 셀이 하나라도 있으면 live(혼합)
+
     lang: 'ko',
     tiers,
     isps: ALL_ISPS.map((i) => i.id),
@@ -226,7 +314,7 @@ async function main() {
   await mkdir(dirname(OUT), { recursive: true });
   await writeFile(OUT, JSON.stringify(payload));
   const kb = Math.round(Buffer.byteLength(JSON.stringify(payload)) / 1024);
-  console.log(`[mock] wrote ${points} points → ${OUT} (${(kb / 1024).toFixed(1)} MB)`);
+  console.log(`[mock] wrote ${points} points (live cells=${live}) → ${OUT} (${(kb / 1024).toFixed(1)} MB)`);
 }
 
 main().catch((err) => { console.error('[mock] fatal:', err); process.exit(1); });

@@ -36,12 +36,14 @@ export interface QualityData {
 }
 
 // One decoded, display-ready point after aggregation + FR-03 derivation.
+// 표본 수(total/kept/trimmed/retained)는 null 가능: percentile 기반 실데이터(예: Cloudflare
+// IQI)는 표본 수를 제공하지 않으므로 "미상(–)"으로 두고 저표본 경고를 띄우지 않는다.
 export interface DisplayPoint {
   t: number;
   v: number; // mean
-  total: number; // total samples
-  kept: number;
-  trimmed: number; // total - kept
-  retained: number; // kept / total (0..1)
+  total: number | null; // total samples (null = 미상)
+  kept: number | null;
+  trimmed: number | null; // total - kept
+  retained: number | null; // kept / total (0..1)
   low: boolean; // below sample-size threshold (FR-03 validator)
 }

@@ -28,7 +28,7 @@ export function useQualityData(url: string = DEFAULT_URL): QualityState {
   return state;
 }
 
-export interface BasePoint { t: number; mean: number | null; total: number; kept: number; }
+export interface BasePoint { t: number; mean: number | null; total: number | null; kept: number | null; }
 
 // 한 티어의 컬럼형 배열을 시간축과 결합해 디코딩.
 export function getTierPoints(
@@ -44,7 +44,7 @@ export function getTierPoints(
   return axis.map((t, i) => ({
     t,
     mean: v[i] ?? null,
-    total: n[i] ?? 0,
-    kept: k[i] ?? 0,
+    total: n[i] ?? null, // null = 표본 수 미상(percentile 기반 실데이터)
+    kept: k[i] ?? null,
   }));
 }
