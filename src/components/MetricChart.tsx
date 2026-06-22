@@ -53,7 +53,7 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
       const base = getTierPoints(data, ispId, metricId, tier);
       // -Infinity: sinceMs로 자르지 않고 티어 전체를 차트에 공급.
       const pts = aggregateSeries(base, viewDef, data.tiers[tier].baseMin, -Infinity);
-      const color = colorForIsp(colorIndex(ispId));
+      const color = colorForIsp(colorIndex(ispId), ispId);
       series.push({
         name: ISP_BY_ID[ispId]?.name || ispId,
         data: pts.map((p) => ({

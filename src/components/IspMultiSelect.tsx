@@ -79,7 +79,7 @@ export default function IspMultiSelect({ selected, onChange, colorIndex }: Props
                   visible.map((isp) => (
                     <label className="ms-item" key={isp.id}>
                       <input type="checkbox" checked={selected.has(isp.id)} onChange={() => toggle(isp.id)} />
-                      <span className="swatch" style={{ background: colorForIsp(colorIndex(isp.id)) }} />
+                      <span className="swatch" style={{ background: colorForIsp(colorIndex(isp.id), isp.id) }} />
                       <span>{isp.name}</span>
                       <small>{isp.asns.join(', ')}</small>
                     </label>
