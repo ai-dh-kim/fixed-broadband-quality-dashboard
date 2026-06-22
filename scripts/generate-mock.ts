@@ -344,6 +344,9 @@ async function main() {
           } else if (nfReal != null && Number.isFinite(nfReal)) {
             const clamped = Math.min(Math.max(nfReal, metric.hard.min), metric.hard.max);
             v.push(round(clamped)); n.push(null); k.push(null); live++; liveMetricSet.add(metric.id); // 월별 인덱스 → 표본수 미상
+          } else if (metric.id === 'nfSpeedIndex') {
+            // 월별 실데이터(약 6개월)만 표시 — 데이터 없는 구간은 시뮬로 채우지 않고 빈칸.
+            v.push(null); n.push(null); k.push(null);
           } else if (g.key === 'fine') {
             const s = trimmedStats(simulateSamples(isp.id, isp.groupId, metric.id, t), { hard: metric.hard });
             v.push(s.mean == null ? null : round(s.mean));
