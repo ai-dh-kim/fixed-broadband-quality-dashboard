@@ -23,10 +23,11 @@ export default function MetricSection(props: Props) {
   const { metricId, view, data, selectedIsps, range } = props;
   const metric = METRIC_BY_ID[metricId];
 
-  // 현재 보기(티어)에서 이 지표가 실측 데이터인지: 실측 셀은 표본 수(n)가 null.
-  // (지금은 Cloudflare 실데이터만 표본 수 미제공 → null. 표본 수를 주는 실소스를 붙이면 명시 신호로 교체.)
+  // 이 지표가 실측 데이터인지. 생성기가 내려준 명시적 liveMetrics를 우선 사용
+  // (M-Lab처럼 실표본수가 있는 실데이터도 정확히 판정). 구버전 데이터는 표본수 null 휴리스틱으로 폴백.
   const tier = RANGES[range].tier;
   const isLive = useMemo(() => {
+    if (data.liveMetrics) return data.liveMetrics.includes(metricId);
     for (const isp of selectedIsps) {
       const blk = data.series[isp]?.[metricId]?.[tier];
       if (!blk) continue;

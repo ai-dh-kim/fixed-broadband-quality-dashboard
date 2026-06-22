@@ -31,6 +31,8 @@ export interface QualityData {
   tiers: Record<TierKey, TierMeta>;
   isps: string[];
   metrics: string[];
+  // 실데이터(라이브)가 들어간 지표 id 목록 — 프론트의 '실시간/시뮬' 태그 판정에 사용.
+  liveMetrics?: string[];
   // series[ispId][metricId] -> SeriesEntry
   series: Record<string, Record<string, SeriesEntry>>;
 }

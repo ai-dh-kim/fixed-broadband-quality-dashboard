@@ -1,0 +1,47 @@
+# M-Lab BigQuery 수집 (하루 1회). 비용 안전: BigQuery 호출을 하루 1회로 제한하고
+# 결과를 public/mlab_cache.json 에 캐시한다. 10분 크론(collect.yml)은 이 캐시만 읽는다.
+# 첫 도입 시: 수동(Run workflow)으로 먼저 1회 실행해 로그의 스캔량(GB)을 확인한 뒤 스케줄을 신뢰할 것.
+name: Collect M-Lab (daily)
+
+on:
+  schedule:
+    - cron: '17 5 * * *' # 매일 05:17 UTC (정시 혼잡 회피)
+  workflow_dispatch: {}
+
+concurrency:
+  group: collect-mlab
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  mlab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Query M-Lab BigQuery → mlab_cache.json
+        env:
+          MLAB_BQ_KEY: ${{ secrets.MLAB_BQ_KEY }}       # 서비스계정 JSON 키 전체
+          MLAB_BQ_PROJECT: ${{ secrets.MLAB_BQ_PROJECT }} # GCP 프로젝트 ID
+        run: node scripts/collect-mlab.ts
+
+      - name: Commit cache
+        run: |
+          git config user.name "quality-bot"
+          git config user.email "quality-bot@users.noreply.github.com"
+          git add public/mlab_cache.json
+          if git diff --cached --quiet; then
+            echo "No M-Lab cache changes."
+          else
+            git commit -m "chore(data): M-Lab daily cache [skip ci]"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi

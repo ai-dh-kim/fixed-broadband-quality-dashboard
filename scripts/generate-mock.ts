@@ -8,7 +8,7 @@
 //
 // 실행: node scripts/generate-mock.ts  (Node 24 타입 스트리핑)
 
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,8 +20,21 @@ import type { QualityData, TierBlock, TierKey } from '../src/types.ts';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(__dir, '../public/quality_data.json');
+const MLAB_CACHE = resolve(__dir, '../public/mlab_cache.json');
 const DAY = 86400000;
 const GRID_MS = 10 * 60 * 1000;
+
+// M-Lab 캐시(collect-mlab.ts가 하루 1회 생성) 로드. 없으면 null → M-Lab 지표는 시뮬.
+// perIsp[ispId][tier][field='thr'|'rtt'|'loss'][bucketMs] = { v, n }
+type MlabCache = { perIsp: Record<string, Record<string, Record<string, Record<string, { v: number; n: number }>>>> };
+async function loadMlabCache(): Promise<MlabCache | null> {
+  try { return JSON.parse(await readFile(MLAB_CACHE, 'utf8')) as MlabCache; }
+  catch { return null; }
+}
+// M-Lab 지표 id → 캐시 필드
+const MLAB_FIELD: Record<string, 'thr' | 'rtt' | 'loss'> = {
+  meanThroughput: 'thr', minRtt: 'rtt', lossRate: 'loss',
+};
 
 const FORCE_SIM = process.env.DATA_MODE === 'sim'; // 현재 항상 sim (모크)
 void FORCE_SIM;
@@ -268,7 +281,10 @@ async function main() {
   console.log('[mock] generating single multi-tier quality_data.json …');
 
   const cf = await buildCfCache(now); // 토큰 있으면 실데이터, 없으면 빈 캐시(시뮬)
+  const mlab = await loadMlabCache(); // 하루 1회 캐시(있으면 M-Lab 실데이터)
+  if (mlab) console.log(`[mlab] 캐시 로드됨 (ISP ${Object.keys(mlab.perIsp ?? {}).length}개)`);
   let live = 0;
+  const liveMetricSet = new Set<string>(); // 실데이터가 하나라도 들어간 지표 id
 
   const tiers: QualityData['tiers'] = {
     fine: { baseMin: TIER_BASE_MIN.fine, t: [] },
@@ -290,12 +306,17 @@ async function main() {
         const n: (number | null)[] = [];
         const k: (number | null)[] = [];
         for (const t of axis) {
-          // 실데이터(Cloudflare IQI) 우선(모든 티어), 없으면 시뮬 폴백. 실데이터 셀은 표본 수 미상(n/k=null).
-          const field = CF_METRIC_FIELD[metric.id];
-          const real = field ? cf[isp.id]?.[g.key]?.[field]?.get(t) : undefined;
-          if (real != null && Number.isFinite(real)) {
-            const clamped = Math.min(Math.max(real, metric.hard.min), metric.hard.max);
-            v.push(round(clamped)); n.push(null); k.push(null); live++;
+          // 실데이터 우선순위: ① Cloudflare IQI(표본수 미상 n/k=null) ② M-Lab 캐시(실표본수 n) ③ 시뮬.
+          const cfField = CF_METRIC_FIELD[metric.id];
+          const cfReal = cfField ? cf[isp.id]?.[g.key]?.[cfField]?.get(t) : undefined;
+          const mlField = MLAB_FIELD[metric.id];
+          const mlReal = mlField ? mlab?.perIsp?.[isp.id]?.[g.key]?.[mlField]?.[String(t)] : undefined;
+          if (cfReal != null && Number.isFinite(cfReal)) {
+            const clamped = Math.min(Math.max(cfReal, metric.hard.min), metric.hard.max);
+            v.push(round(clamped)); n.push(null); k.push(null); live++; liveMetricSet.add(metric.id);
+          } else if (mlReal && Number.isFinite(mlReal.v)) {
+            const clamped = Math.min(Math.max(mlReal.v, metric.hard.min), metric.hard.max);
+            v.push(round(clamped)); n.push(mlReal.n); k.push(mlReal.n); live++; liveMetricSet.add(metric.id);
           } else if (g.key === 'fine') {
             const s = trimmedStats(simulateSamples(isp.id, isp.groupId, metric.id, t), { hard: metric.hard });
             v.push(s.mean == null ? null : round(s.mean));
@@ -321,13 +342,14 @@ async function main() {
     tiers,
     isps: ALL_ISPS.map((i) => i.id),
     metrics: METRICS.map((m) => m.id),
+    liveMetrics: [...liveMetricSet], // 실데이터가 들어간 지표(프론트 '실시간' 태그용)
     series,
   };
 
   await mkdir(dirname(OUT), { recursive: true });
   await writeFile(OUT, JSON.stringify(payload));
   const kb = Math.round(Buffer.byteLength(JSON.stringify(payload)) / 1024);
-  console.log(`[mock] wrote ${points} points (live cells=${live}) → ${OUT} (${(kb / 1024).toFixed(1)} MB)`);
+  console.log(`[mock] wrote ${points} points (live cells=${live}, liveMetrics=${[...liveMetricSet].join(',') || 'none'}) → ${OUT} (${(kb / 1024).toFixed(1)} MB)`);
 }
 
 main().catch((err) => { console.error('[mock] fatal:', err); process.exit(1); });
