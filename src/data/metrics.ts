@@ -27,6 +27,7 @@ export interface MetricDef {
   // 값 → 범주형 인증 등급(rating_grade) 매핑. 내림차순 임계값(min 이상이면 해당 라벨).
   // 지정된 지표에 한해 차트 툴팁/피크 카드에 등급이 표시된다.
   grades?: { min: number; label: string }[];
+  yMax?: number; // 차트 Y축 상한 고정(미지정 시 데이터에 맞춰 자동). 값 범위가 좁아 공백이 클 때 사용.
   cite: MetricCite; // 근거(등급/출처) — 모든 지표 필수(형평성). 차트 하단에 표시.
 }
 
@@ -49,6 +50,9 @@ export const METRICS: MetricDef[] = [
   // --- Cloudflare Radar ---
   { id: 'latency', name: '지연시간 (RTT)', source: 'cloudflare', unit: 'ms', higherIsBetter: false, hard: { min: 0, max: 500 },
     cite: { grade: 'A', basis: 'Cloudflare Radar 인터넷 품질(IQI): ASN별 idle 지연(RTT) 실측', url: 'https://radar.cloudflare.com/quality' } },
+  // DNS 응답시간: ISP DNS 해석 속도. Cloudflare IQI가 ASN별로 시계열 제공(낮을수록 좋음). RTT 바로 아래에 배치.
+  { id: 'dnsResponse', name: 'DNS 응답시간', source: 'cloudflare', unit: 'ms', higherIsBetter: false, hard: { min: 0, max: 2000 },
+    cite: { grade: 'A', basis: 'Cloudflare Radar 인터넷 품질(IQI): ASN별 DNS 응답시간(중앙값) 실측', url: 'https://radar.cloudflare.com/quality' } },
   { id: 'bandwidth', name: '대역폭(기준)', source: 'cloudflare', unit: 'Mbps', higherIsBetter: true, hard: { min: 0, max: 10000 },
     cite: { grade: 'A', basis: 'Cloudflare Radar 인터넷 품질(IQI): ASN별 다운로드 속도(중앙값) 실측', url: 'https://radar.cloudflare.com/quality' } },
   // 보장 처리량(하위 25%): Cloudflare가 ASN별 다운로드 25퍼센타일을 직접 공개. "최악 체감 속도".
@@ -57,16 +61,13 @@ export const METRICS: MetricDef[] = [
   // IPv6 채택률: ISP 망 현대화 수준(높을수록 최신). Cloudflare가 ASN별 IPv6 트래픽 비율을 시계열로 공개.
   { id: 'ipv6', name: 'IPv6 채택률', source: 'cloudflare', unit: '%', higherIsBetter: true, hard: { min: 0, max: 100 },
     cite: { grade: 'A', basis: 'Cloudflare Radar HTTP: ASN별 IPv6 트래픽 비율 실측(망 현대화 지표)', url: 'https://developers.cloudflare.com/radar/investigate/http-requests/' } },
-  // DNS 응답시간: ISP DNS 해석 속도. Cloudflare IQI가 ASN별로 시계열 제공(낮을수록 좋음).
-  { id: 'dnsResponse', name: 'DNS 응답시간', source: 'cloudflare', unit: 'ms', higherIsBetter: false, hard: { min: 0, max: 2000 },
-    cite: { grade: 'A', basis: 'Cloudflare Radar 인터넷 품질(IQI): ASN별 DNS 응답시간(중앙값) 실측', url: 'https://radar.cloudflare.com/quality' } },
 
   // --- M-Lab (ndt7) ---
   { id: 'meanThroughput', name: '평균 처리량', source: 'mlab', unit: 'Mbps', higherIsBetter: true, hard: { min: 0, max: 10000 },
     cite: { grade: 'A', basis: 'M-Lab ndt7: 다운로드 처리량 실측 (BigQuery 공개셋 measurement-lab.ndt.ndt7)', url: 'https://www.measurementlab.net/tests/ndt/ndt7/' } },
   { id: 'minRtt', name: '최소 RTT', source: 'mlab', unit: 'ms', higherIsBetter: false, hard: { min: 0, max: 500 },
     cite: { grade: 'A', basis: 'M-Lab ndt7 TCP_INFO: 최소 RTT(tcpi_min_rtt) 실측', url: 'https://www.measurementlab.net/tests/ndt/ndt7/' } },
-  { id: 'lossRate', name: '손실률', source: 'mlab', unit: '%', higherIsBetter: false, hard: { min: 0, max: 100 },
+  { id: 'lossRate', name: '손실률', source: 'mlab', unit: '%', higherIsBetter: false, hard: { min: 0, max: 100 }, yMax: 4,
     cite: { grade: 'B', basis: 'M-Lab ndt7 TCP_INFO: 재전송 카운터 기반 손실률 집계', url: 'https://www.measurementlab.net/tests/ndt/ndt7/' } },
 
   // --- Netflix 스트리밍 품질 ---

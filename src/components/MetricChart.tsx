@@ -115,6 +115,8 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
     xaxis: { type: 'datetime', labels: { datetimeUTC: true }, min: effSince, max: maxMs },
     yaxis: {
       title: { text: `${metric.name} (${metric.unit})` },
+      // yMax 지정 지표는 상한 고정(값 범위가 좁아 공백이 크게 남는 경우). 미지정이면 자동.
+      ...(metric.yMax != null ? { max: metric.yMax } : {}),
       labels: { formatter: (v: number) => (v == null ? '' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })) },
     },
     grid: { borderColor: chrome.grid, strokeDashArray: 3 },
