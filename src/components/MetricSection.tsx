@@ -47,6 +47,7 @@ export default function MetricSection(props: Props) {
           <span className="cite-pop">
             {metric.cite.basis}{' '}
             <a href={metric.cite.url} target="_blank" rel="noopener noreferrer">{T.citeSource} ↗</a>
+            {metric.cite.note && <span className="cite-note">{metric.cite.note}</span>}
           </span>
         </span>
       </h2>

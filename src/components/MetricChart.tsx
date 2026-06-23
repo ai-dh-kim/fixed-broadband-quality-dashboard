@@ -37,6 +37,17 @@ const DASH_BY_ISP: Record<string, number> = {
   lgu: 0, 'lgu-3786': 0, 'lgu-17858': 0, kt: 6, skb: 2,
 };
 
+// 데이터 최대값 위로 ~10% 여유를 두고 1·2·5 단위의 '깔끔한' 상한으로 올림.
+// 고정 상한이 아니라 데이터에 따라 매번 달라져, 값이 작을 땐 공백을 줄이고 스파이크가 크면 자동으로 넓어진다.
+function niceCeil(v: number): number | undefined {
+  if (!Number.isFinite(v) || v <= 0) return undefined;
+  const pad = v * 1.1;
+  const mag = Math.pow(10, Math.floor(Math.log10(pad)));
+  const n = pad / mag;
+  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return step * mag;
+}
+
 // 선택된 ISP에서, 합산 그룹의 member가 모두 선택됐으면 combo 하나(합산값)로 치환.
 function effectiveIsps(selected: string[]): string[] {
   const set = new Set(selected);
@@ -67,12 +78,13 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
   const maxMs = axis && axis.length ? axis[axis.length - 1] : sinceMs;
   const effSince = FIXED180 ? maxMs - 180 * 86400000 : sinceMs;
 
-  const { series, colors, discrete, dashArray } = useMemo(() => {
+  const { series, colors, discrete, dashArray, maxY } = useMemo(() => {
     const series: { name: string; data: DataPoint[] }[] = [];
     const colors: string[] = [];
     const dashArray: number[] = [];
     const discrete: { seriesIndex: number; dataPointIndex: number; size: number; fillColor: string; strokeColor: string }[] = [];
     let si = 0;
+    let maxY = -Infinity; // 실제 데이터 최대값 — tightY 지표의 Y축을 여기에 맞춰 동적으로 잡는다(고정 상한 X).
     for (const ispId of effectiveIsps(selectedIsps)) {
       const base = getTierPoints(data, ispId, metricId, tier);
       // -Infinity: sinceMs로 자르지 않고 티어 전체를 차트에 공급.
@@ -89,11 +101,12 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
       colors.push(color);
       dashArray.push(DASH_BY_ISP[ispId] ?? DASH_PATTERN[si % DASH_PATTERN.length]); // ISP 고정 또는 인덱스 스타일
       pts.forEach((p, di) => {
+        if (p.v != null && p.v > maxY) maxY = p.v;
         if (p.low) discrete.push({ seriesIndex: si, dataPointIndex: di, size: 5, fillColor: '#ffb300', strokeColor: color });
       });
       si++;
     }
-    return { series, colors, discrete, dashArray };
+    return { series, colors, discrete, dashArray, maxY };
   }, [data, selectedIsps, metricId, tier, viewDef, sinceMs, colorIndex]);
 
   const chrome = CHROME[theme];
@@ -115,8 +128,8 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
     xaxis: { type: 'datetime', labels: { datetimeUTC: true }, min: effSince, max: maxMs },
     yaxis: {
       title: { text: `${metric.name} (${metric.unit})` },
-      // yMax 지정 지표는 상한 고정(값 범위가 좁아 공백이 크게 남는 경우). 미지정이면 자동.
-      ...(metric.yMax != null ? { max: metric.yMax } : {}),
+      // tightY 지표는 데이터 최대값에 맞춘 동적 상한(고정 X). 미지정이면 ApexCharts 자동 스케일.
+      ...(metric.tightY && niceCeil(maxY) != null ? { max: niceCeil(maxY), min: 0 } : {}),
       labels: { formatter: (v: number) => (v == null ? '' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })) },
     },
     grid: { borderColor: chrome.grid, strokeDashArray: 3 },
@@ -159,7 +172,7 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
         return `<div class="qtt"><div class="qtt-title">${when}</div>${blocks}</div>`;
       },
     },
-  }), [theme, colors, discrete, dashArray, metric, chrome, effSince, maxMs, FIXED180]);
+  }), [theme, colors, discrete, dashArray, metric, chrome, effSince, maxMs, FIXED180, maxY]);
 
   if (selectedIsps.length === 0) {
     return <div className="empty">{T.emptyIsp}</div>;

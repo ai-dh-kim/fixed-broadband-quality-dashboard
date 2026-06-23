@@ -207,3 +207,5 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 .cite-info:hover .cite-pop, .cite-info:focus-within .cite-pop { opacity: 1; visibility: visible; }
 .cite-pop a { color: var(--accent); text-decoration: none; white-space: nowrap; }
 .cite-pop a:hover { text-decoration: underline; }
+/* 측정 한계 등 유의점 한 줄 (출처 아래) */
+.cite-note { display: block; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); color: var(--text-dim); }
