@@ -59,7 +59,7 @@ export const T = {
   themeLight: '라이트',
   resetButton: '초기화',
   ispPanelTitle: '조회 대상 ISP 선택',
-  ispSelected: (n: number) => `${n}개 통신사 선택됨`,
+  ispSelected: (n: number) => `${n}개 ASN 선택됨`,
   searchPlaceholder: '이름 또는 ASN으로 검색…',
   selectShown: '표시 항목 선택',
   clearAll: '전체 해제',

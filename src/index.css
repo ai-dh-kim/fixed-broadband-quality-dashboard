@@ -122,6 +122,11 @@ aside.panel { position: sticky; top: 12px; align-self: start; max-height: calc(1
 .ms-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 24px; cursor: pointer; }
 .ms-item:hover { background: var(--surface-2); }
 .ms-item small { color: var(--text-dim); }
+/* 멀티 ASN ISP 박스: 헤더 + ASN 하위 체크박스 */
+.ms-box { border-left: 2px solid var(--border); margin: 2px 0 4px 18px; }
+.ms-box-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px 4px 6px; font-weight: 600; }
+.ms-item.ms-sub { padding-left: 30px; }
+.ms-item.ms-sub small { display: none; }
 .ms-actions { display: flex; gap: 8px; padding: 8px 10px; position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--border); }
 .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
 
