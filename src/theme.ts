@@ -22,9 +22,11 @@ const PALETTE = [
 
 // 국내 3사 브랜드(BI) 색상 — 해당 ISP는 팔레트 대신 이 색을 사용.
 const BRAND_COLORS: Record<string, string> = {
-  skb: '#3617CE', // SK 브로드밴드 (54,23,206)
-  kt: '#00BEAC',  // KT (0,190,172)
-  lgu: '#E5007A', // LG U+ (229,0,122)
+  skb: '#3617CE',         // SK 브로드밴드 (54,23,206)
+  kt: '#00BEAC',          // KT (0,190,172)
+  lgu: '#E5007A',         // LG U+ 통합 (229,0,122)
+  'lgu-3786': '#E5007A',  // LG U+ AS3786
+  'lgu-17858': '#ff66ab', // LG U+ AS17858 (구분 위해 약간 밝게)
 };
 
 export function colorForIsp(index: number, ispId?: string): string {

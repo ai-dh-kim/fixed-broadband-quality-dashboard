@@ -9,7 +9,7 @@ import type { ApexOptions } from 'apexcharts';
 import { aggregateSeries } from '../lib/aggregate.ts';
 import { getTierPoints } from '../data/quality.ts';
 import { colorForIsp } from '../theme.ts';
-import { ISP_BY_ID } from '../data/isps.ts';
+import { ISP_BY_ID, COMBINE_GROUPS } from '../data/isps.ts';
 import { METRIC_BY_ID, gradeFor } from '../data/metrics.ts';
 import { VIEWS, RANGES, T, type ViewKey, type RangeKey } from '../config.ts';
 import type { QualityData } from '../types.ts';
@@ -32,6 +32,23 @@ const CHROME = {
 };
 // 시리즈별 선 스타일(점선 길이). 색이 같은 위치에서 겹쳐도 구분되도록.
 const DASH_PATTERN = [0, 6, 2, 10, 4, 8];
+// 특정 ISP 고정 선 스타일: LG U+ 실선(0), KT 점선(6), SK 점점선(2).
+const DASH_BY_ISP: Record<string, number> = {
+  lgu: 0, 'lgu-3786': 0, 'lgu-17858': 0, kt: 6, skb: 2,
+};
+
+// 선택된 ISP에서, 합산 그룹의 member가 모두 선택됐으면 combo 하나(합산값)로 치환.
+function effectiveIsps(selected: string[]): string[] {
+  const set = new Set(selected);
+  const result = [...selected];
+  for (const [combo, members] of Object.entries(COMBINE_GROUPS)) {
+    if (members.every((m) => set.has(m))) {
+      for (const m of members) { const i = result.indexOf(m); if (i >= 0) result.splice(i, 1); }
+      result.push(combo);
+    }
+  }
+  return result;
+}
 
 interface PointMeta { total: number | null; trimmed: number | null; retained: number | null; low: boolean; }
 type DataPoint = { x: number; y: number | null; meta: PointMeta };
@@ -56,7 +73,7 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
     const dashArray: number[] = [];
     const discrete: { seriesIndex: number; dataPointIndex: number; size: number; fillColor: string; strokeColor: string }[] = [];
     let si = 0;
-    for (const ispId of selectedIsps) {
+    for (const ispId of effectiveIsps(selectedIsps)) {
       const base = getTierPoints(data, ispId, metricId, tier);
       // -Infinity: sinceMs로 자르지 않고 티어 전체를 차트에 공급.
       const pts = aggregateSeries(base, viewDef, data.tiers[tier].baseMin, -Infinity);
@@ -70,7 +87,7 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
         })),
       });
       colors.push(color);
-      dashArray.push(DASH_PATTERN[si % DASH_PATTERN.length]); // 시리즈별 선 스타일 → 겹쳐도 구분
+      dashArray.push(DASH_BY_ISP[ispId] ?? DASH_PATTERN[si % DASH_PATTERN.length]); // ISP 고정 또는 인덱스 스타일
       pts.forEach((p, di) => {
         if (p.low) discrete.push({ seriesIndex: si, dataPointIndex: di, size: 5, fillColor: '#ffb300', strokeColor: color });
       });

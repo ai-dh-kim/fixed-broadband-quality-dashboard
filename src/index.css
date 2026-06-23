@@ -84,6 +84,10 @@ label.field { display: flex; flex-direction: column; gap: 2px; font-size: 11px; 
 .content.isp-collapsed { grid-template-columns: max-content 1fr; }
 @media (max-width: 900px) { .content { grid-template-columns: 1fr; } }
 
+/* ISP 선택 패널 고정: 차트를 스크롤해도 왼쪽에 그대로 유지 */
+aside.panel { position: sticky; top: 12px; align-self: start; max-height: calc(100vh - 24px); overflow-y: auto; }
+@media (max-width: 900px) { aside.panel { position: static; max-height: none; } }
+
 .panel h2.collapsible { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
 .panel h2.collapsible .caret { font-size: 11px; }
 

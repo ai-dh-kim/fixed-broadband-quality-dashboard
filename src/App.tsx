@@ -25,7 +25,7 @@ const DEFAULT_VIEW: ViewKey = '1hour';
 export default function App() {
   const [theme, setTheme] = useState(loadTheme);
   const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(ALL_ISPS.filter((i) => i.pinned).map((i) => i.id))
+    () => new Set(ALL_ISPS.filter((i) => i.pinned && !i.hidden).map((i) => i.id))
   );
   const [sourceId, setSourceId] = useState<string>(DEFAULT_SOURCE);
   const [range, setRange] = useState<RangeKey>(DEFAULT_RANGE);

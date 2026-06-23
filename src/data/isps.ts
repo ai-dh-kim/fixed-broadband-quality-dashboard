@@ -5,7 +5,7 @@ export interface Isp {
   id: string;
   name: string;
   asns: string[];
-  mergeable?: boolean;
+  hidden?: boolean; // 선택 목록엔 안 보이지만 데이터는 생성(합산/통합 entry용)
 }
 
 export interface IspGroup {
@@ -21,7 +21,10 @@ export const ISP_GROUPS: IspGroup[] = [
     label: '한국 (고정)',
     pinned: true,
     isps: [
-      { id: 'lgu', name: 'LG U+', asns: ['AS3786', 'AS17858'], mergeable: true },
+      // LG U+: ASN 2개를 개별 선택 가능. 둘 다 선택하면 합산(통합) entry(lgu)로 표시.
+      { id: 'lgu', name: 'LG U+ (통합)', asns: ['AS3786', 'AS17858'], hidden: true },
+      { id: 'lgu-3786', name: 'LG U+ (AS3786)', asns: ['AS3786'] },
+      { id: 'lgu-17858', name: 'LG U+ (AS17858)', asns: ['AS17858'] },
       { id: 'kt', name: 'KT', asns: ['AS4766'] },
       { id: 'skb', name: 'SK 브로드밴드', asns: ['AS9318'] },
     ],
@@ -57,3 +60,8 @@ export const ALL_ISPS: FlatIsp[] = ISP_GROUPS.flatMap((g) =>
 export const ISP_BY_ID: Record<string, FlatIsp> = Object.fromEntries(
   ALL_ISPS.map((i) => [i.id, i])
 );
+
+// 합산(통합) 매핑: member ASN entry가 "모두" 선택되면 차트에서 combo 하나(합산값)로 합쳐 표시.
+export const COMBINE_GROUPS: Record<string, string[]> = {
+  lgu: ['lgu-3786', 'lgu-17858'],
+};

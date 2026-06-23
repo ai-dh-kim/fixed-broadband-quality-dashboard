@@ -39,7 +39,7 @@ export default function IspMultiSelect({ selected, onChange, colorIndex }: Props
 
   const selectShown = () => {
     const all = new Set(selected);
-    ISP_GROUPS.forEach((g) => g.isps.forEach((i) => matches(i) && all.add(i.id)));
+    ISP_GROUPS.forEach((g) => g.isps.forEach((i) => !i.hidden && matches(i) && all.add(i.id)));
     onChange(all);
   };
   const clearAll = () => onChange(new Set());
@@ -62,7 +62,7 @@ export default function IspMultiSelect({ selected, onChange, colorIndex }: Props
           />
 
           {ISP_GROUPS.map((group) => {
-            const visible = group.isps.filter(matches);
+            const visible = group.isps.filter((i) => !i.hidden && matches(i));
             if (visible.length === 0) return null;
             const isCollapsed = !group.pinned && collapsed[group.id] && !q;
             return (

@@ -94,9 +94,7 @@ export const T = {
   apiButton: '데이터 소스',
   apiTitle: '데이터 소스 설정',
   apiDataUrl: '데이터 소스 URL (quality_data.json)',
-  apiSave: '저장',
-  apiCancel: '취소',
-  apiReset: '기본값',
+  apiClose: '닫기',
   apiSecurityNote: '※ 이 대시보드는 위 URL의 quality_data.json 한 파일만 불러옵니다. 실데이터는 GitHub Actions 수집기가 API 토큰(저장소 시크릿)으로 생성·갱신하며, 클라이언트(브라우저)에는 토큰이 전혀 저장되지 않습니다(NFR-02). 보통 내 GitHub raw URL을 가리킵니다.',
   // 스크린샷
   screenshotButton: '스크린샷',
