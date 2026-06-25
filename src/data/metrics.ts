@@ -28,7 +28,6 @@ export interface MetricDef {
   // 값 → 범주형 인증 등급(rating_grade) 매핑. 내림차순 임계값(min 이상이면 해당 라벨).
   // 지정된 지표에 한해 차트 툴팁/피크 카드에 등급이 표시된다.
   grades?: { min: number; label: string }[];
-  tightY?: boolean; // 차트 Y축을 데이터 최대값에 맞춰 동적으로 줄임(상한 고정 X). 값 범위가 좁아 공백이 클 때.
   cite: MetricCite; // 근거(등급/출처) — 모든 지표 필수(형평성). 차트 하단에 표시.
 }
 
@@ -69,7 +68,7 @@ export const METRICS: MetricDef[] = [
       note: '※ M-Lab 서버로의 단일 TCP 측정값입니다. 경로·서버 한계와 측정자 자기선택(문제 시 측정), WiFi·단말 영향으로 가입 상품 속도(예: 500M·1G)보다 낮게 나올 수 있어 절대속도보다 ISP 간 상대·추세 비교에 적합합니다.' } },
   { id: 'minRtt', name: '최소 RTT', source: 'mlab', unit: 'ms', higherIsBetter: false, hard: { min: 0, max: 500 },
     cite: { grade: 'A', basis: 'M-Lab ndt7 TCP_INFO: 최소 RTT(tcpi_min_rtt) 실측', url: 'https://www.measurementlab.net/tests/ndt/ndt7/' } },
-  { id: 'lossRate', name: '손실률', source: 'mlab', unit: '%', higherIsBetter: false, hard: { min: 0, max: 100 }, tightY: true,
+  { id: 'lossRate', name: '손실률', source: 'mlab', unit: '%', higherIsBetter: false, hard: { min: 0, max: 100 },
     cite: { grade: 'B', basis: 'M-Lab ndt7 TCP_INFO: 재전송 카운터 기반 손실률 집계', url: 'https://www.measurementlab.net/tests/ndt/ndt7/' } },
 
   // --- Netflix 스트리밍 품질 ---

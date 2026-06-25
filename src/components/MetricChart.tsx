@@ -37,16 +37,23 @@ const DASH_BY_ISP: Record<string, number> = {
   lgu: 0, 'lgu-3786': 0, 'lgu-17858': 0, kt: 6, skb: 2,
 };
 
-// 데이터 최대값 위로 ~10% 여유를 두고 1·2·5 단위의 '깔끔한' 상한으로 올림.
+// 데이터 최대값 위로 ~8% 여유를 두고 '깔끔한' 상한으로 올림(모든 차트 공통).
 // 고정 상한이 아니라 데이터에 따라 매번 달라져, 값이 작을 땐 공백을 줄이고 스파이크가 크면 자동으로 넓어진다.
+// 단계가 촘촘해(1.5·2.5·3·6…) 예: 216→250, 600→650 처럼 데이터에 바짝 붙는다(216이 500으로 튀지 않음).
+const NICE_STEPS = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
 function niceCeil(v: number): number | undefined {
   if (!Number.isFinite(v) || v <= 0) return undefined;
-  const pad = v * 1.1;
+  const pad = v * 1.08;
   const mag = Math.pow(10, Math.floor(Math.log10(pad)));
   const n = pad / mag;
-  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
-  return step * mag;
+  const step = NICE_STEPS.find((s) => n <= s) ?? 10;
+  return Math.round(step * mag * 1000) / 1000;
 }
+
+// 터치 기기(모바일/태블릿) 감지 — 차트가 스크롤 제스처를 줌으로 가로채지 않도록 줌/팬을 끈다.
+const IS_TOUCH = typeof window !== 'undefined'
+  && typeof window.matchMedia === 'function'
+  && window.matchMedia('(pointer: coarse)').matches;
 
 // 선택된 ISP에서, 합산 그룹의 member가 모두 선택됐으면 combo 하나(합산값)로 치환.
 function effectiveIsps(selected: string[]): string[] {
@@ -118,8 +125,9 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
       background: 'transparent',
       foreColor: chrome.fore,
       animations: { enabled: false },
-      toolbar: { tools: { download: true, selection: true, zoom: true, pan: true, reset: true } },
-      zoom: { enabled: true, type: 'x', allowMouseWheelZoom: true },
+      toolbar: { tools: { download: true, selection: !IS_TOUCH, zoom: !IS_TOUCH, pan: !IS_TOUCH, reset: !IS_TOUCH } },
+      // 터치 기기에선 줌/팬을 꺼 스크롤 제스처가 차트에 가로채여 의도치 않게 확대되는 문제 방지.
+      zoom: { enabled: !IS_TOUCH, type: 'x', allowMouseWheelZoom: !IS_TOUCH },
     },
     theme: { mode: theme },
     colors,
@@ -128,8 +136,8 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
     xaxis: { type: 'datetime', labels: { datetimeUTC: true }, min: effSince, max: maxMs },
     yaxis: {
       title: { text: `${metric.name} (${metric.unit})` },
-      // tightY 지표는 데이터 최대값에 맞춘 동적 상한(고정 X). 미지정이면 ApexCharts 자동 스케일.
-      ...(metric.tightY && niceCeil(maxY) != null ? { max: niceCeil(maxY), min: 0 } : {}),
+      // 모든 차트: 데이터 최대값에 맞춘 동적 상한(고정 X). 값에 바짝 붙여 세부 변화를 더 크게 보여 준다.
+      ...(niceCeil(maxY) != null ? { max: niceCeil(maxY), min: 0 } : {}),
       labels: { formatter: (v: number) => (v == null ? '' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })) },
     },
     grid: { borderColor: chrome.grid, strokeDashArray: 3 },
