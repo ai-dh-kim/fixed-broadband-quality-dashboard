@@ -37,6 +37,23 @@ export default function MetricSection(props: Props) {
     return false;
   }, [data, selectedIsps, metricId, tier]);
 
+  // M-Lab 기반 지표의 '마지막 실데이터' 날짜(공지에 표기). 선택 ISP 중 가장 최신 non-null 시점.
+  const mlabLastDate = useMemo(() => {
+    if (!metric.mlabBased) return null;
+    const axis = data.tiers[tier]?.t;
+    if (!axis) return null;
+    let last = -1;
+    for (const isp of selectedIsps) {
+      const blk = data.series[isp]?.[metricId]?.[tier];
+      if (!blk) continue;
+      const v = blk[0];
+      for (let i = v.length - 1; i >= 0; i--) if (v[i] != null) { if (i > last) last = i; break; }
+    }
+    return last >= 0
+      ? new Date(axis[last]).toLocaleDateString('ko-KR', { timeZone: 'UTC', month: '2-digit', day: '2-digit' })
+      : null;
+  }, [data, selectedIsps, metricId, tier, metric.mlabBased]);
+
   return (
     <section className="panel metric-section">
       <h2>
@@ -51,6 +68,7 @@ export default function MetricSection(props: Props) {
           </span>
         </span>
       </h2>
+      {metric.mlabBased && <p className="mlab-delay">{T.mlabDelayNotice(mlabLastDate)}</p>}
       <MetricChart {...props} />
     </section>
   );

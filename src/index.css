@@ -185,6 +185,14 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 .qtt .qtt-sub { color: var(--text-dim); font-size: 11px; margin-top: 2px; }
 .qtt .qtt-low-inline { color: var(--warn); margin-left: 6px; }
 
+/* M-Lab 지표 지연 공지 (제목 아래, 차트 위) */
+.mlab-delay {
+  margin: 0 0 8px; padding: 6px 10px;
+  font-size: 11px; line-height: 1.5; color: var(--text-dim);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 3px solid var(--warn); border-radius: 6px;
+}
+
 /* 지표별 실시간/시뮬 태그 (제목 옆) */
 .live-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 10px; margin-left: 8px; vertical-align: middle; text-transform: none; letter-spacing: normal; }
 .live-tag.live { background: var(--good); color: #fff; }

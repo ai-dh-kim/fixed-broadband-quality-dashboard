@@ -85,13 +85,14 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
   const maxMs = axis && axis.length ? axis[axis.length - 1] : sinceMs;
   const effSince = FIXED180 ? maxMs - 180 * 86400000 : sinceMs;
 
-  const { series, colors, discrete, dashArray, maxY } = useMemo(() => {
+  const { series, colors, discrete, dashArray, maxY, lastLiveMs } = useMemo(() => {
     const series: { name: string; data: DataPoint[] }[] = [];
     const colors: string[] = [];
     const dashArray: number[] = [];
     const discrete: { seriesIndex: number; dataPointIndex: number; size: number; fillColor: string; strokeColor: string }[] = [];
     let si = 0;
-    let maxY = -Infinity; // 실제 데이터 최대값 — tightY 지표의 Y축을 여기에 맞춰 동적으로 잡는다(고정 상한 X).
+    let maxY = -Infinity; // 실제 데이터 최대값 — Y축을 여기에 맞춰 동적으로 잡는다(고정 상한 X).
+    let lastLiveMs = -Infinity; // 값이 있는 가장 최신 시점 — M-Lab 지표의 X축을 여기서 멈추는 데 사용.
     for (const ispId of effectiveIsps(selectedIsps)) {
       const base = getTierPoints(data, ispId, metricId, tier);
       // -Infinity: sinceMs로 자르지 않고 티어 전체를 차트에 공급.
@@ -109,14 +110,21 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
       dashArray.push(DASH_BY_ISP[ispId] ?? DASH_PATTERN[si % DASH_PATTERN.length]); // ISP 고정 또는 인덱스 스타일
       pts.forEach((p, di) => {
         if (p.v != null && p.v > maxY) maxY = p.v;
+        if (p.v != null && p.t > lastLiveMs) lastLiveMs = p.t;
         if (p.low) discrete.push({ seriesIndex: si, dataPointIndex: di, size: 5, fillColor: '#ffb300', strokeColor: color });
       });
       si++;
     }
-    return { series, colors, discrete, dashArray, maxY };
+    return { series, colors, discrete, dashArray, maxY, lastLiveMs: Number.isFinite(lastLiveMs) ? lastLiveMs : null };
   }, [data, selectedIsps, metricId, tier, viewDef, sinceMs, colorIndex]);
 
   const chrome = CHROME[theme];
+
+  // M-Lab 지표: 공개 데이터가 ~1~2일 지연되므로 X축을 '최신 실데이터' 지점에서 멈춘다(현재까지 끌고 가지 않음).
+  // 창 너비(선택 기간)는 유지하고 오른쪽 끝만 lastLiveMs로 당겨, 끝의 빈 구간이 안 보이게 한다.
+  const mlabCap = !!metric.mlabBased && lastLiveMs != null && lastLiveMs < maxMs;
+  const xMax = mlabCap ? (lastLiveMs as number) : maxMs;
+  const xMin = mlabCap ? (lastLiveMs as number) - RANGES[range].ms : effSince;
 
   const options: ApexOptions = useMemo(() => ({
     chart: {
@@ -133,7 +141,7 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
     colors,
     stroke: { width: 2, curve: FIXED180 ? 'stepline' : 'straight', dashArray },
     markers: { size: 0, discrete },
-    xaxis: { type: 'datetime', labels: { datetimeUTC: true }, min: effSince, max: maxMs },
+    xaxis: { type: 'datetime', labels: { datetimeUTC: true }, min: xMin, max: xMax },
     yaxis: {
       title: { text: `${metric.name} (${metric.unit})` },
       // 모든 차트: 데이터 최대값에 맞춘 동적 상한(고정 X). 값에 바짝 붙여 세부 변화를 더 크게 보여 준다.
@@ -180,7 +188,7 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
         return `<div class="qtt"><div class="qtt-title">${when}</div>${blocks}</div>`;
       },
     },
-  }), [theme, colors, discrete, dashArray, metric, chrome, effSince, maxMs, FIXED180, maxY]);
+  }), [theme, colors, discrete, dashArray, metric, chrome, xMin, xMax, FIXED180, maxY]);
 
   if (selectedIsps.length === 0) {
     return <div className="empty">{T.emptyIsp}</div>;
