@@ -70,8 +70,16 @@ export const METRICS: MetricDef[] = [
   { id: 'meanThroughput', name: '평균 처리량', source: 'mlab', unit: 'Mbps', higherIsBetter: true, hard: { min: 0, max: 10000 }, mlabBased: true,
     cite: { grade: 'A', basis: 'M-Lab ndt7: 다운로드 처리량 실측 (BigQuery 공개셋 measurement-lab.ndt.ndt7)', url: 'https://www.measurementlab.net/tests/ndt/ndt7/',
       note: '※ M-Lab 서버로의 단일 TCP 측정값입니다. 경로·서버 한계와 측정자 자기선택(문제 시 측정), WiFi·단말 영향으로 가입 상품 속도(예: 500M·1G)보다 낮게 나올 수 있어 절대속도보다 ISP 간 상대·추세 비교에 적합합니다.' } },
+  // 피크 처리량: 버킷 내 처리량 상위 10%의 평균(관측된 단일 TCP 피크). '공급 한계'의 하한 프록시.
+  { id: 'peakCapacity', name: '피크 처리량 (상위 10%)', source: 'mlab', unit: 'Mbps', higherIsBetter: true, hard: { min: 0, max: 10000 }, mlabBased: true,
+    cite: { grade: 'A', basis: 'M-Lab ndt7: 다운로드 처리량 상위 10%의 평균(버킷별, BigQuery 분위수 집계)', url: 'https://www.measurementlab.net/tests/ndt/ndt7/',
+      note: '※ 단일 TCP→M-Lab 서버 측정의 상위 10% 평균입니다. 경로·단일스트림 상한에 막혀 OLT/백본의 실제 공급 한계를 과소평가할 수 있어 "관측된 피크"로 해석하세요(ISP 간 상대 비교용).' } },
   { id: 'minRtt', name: '최소 RTT', source: 'mlab', unit: 'ms', higherIsBetter: false, hard: { min: 0, max: 500 }, mlabBased: true,
     cite: { grade: 'A', basis: 'M-Lab ndt7 TCP_INFO: 최소 RTT(tcpi_min_rtt) 실측', url: 'https://www.measurementlab.net/tests/ndt/ndt7/' } },
+  // 지연 하한: 버킷 내 MinRTT 하위 10%의 평균(최상 조건의 '지연 바닥'). 백본/물리 경로 품질 프록시.
+  { id: 'latencyFloor', name: '지연 하한 (하위 10%)', source: 'mlab', unit: 'ms', higherIsBetter: false, hard: { min: 0, max: 500 }, mlabBased: true,
+    cite: { grade: 'A', basis: 'M-Lab ndt7: MinRTT 하위 10%의 평균(버킷별, BigQuery 분위수 집계)', url: 'https://www.measurementlab.net/tests/ndt/ndt7/',
+      note: '※ 최상 조건의 지연 바닥으로, 코어망/백본 경로 품질에 가깝습니다. 단 M-Lab 서버까지의 거리(국가·서버 위치)에 의존합니다.' } },
   { id: 'lossRate', name: '손실률', source: 'mlab', unit: '%', higherIsBetter: false, hard: { min: 0, max: 100 }, mlabBased: true,
     cite: { grade: 'B', basis: 'M-Lab ndt7 TCP_INFO: 재전송 카운터 기반 손실률 집계', url: 'https://www.measurementlab.net/tests/ndt/ndt7/' } },
 

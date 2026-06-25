@@ -32,10 +32,12 @@ async function loadMlabCache(): Promise<MlabCache | null> {
   catch { return null; }
 }
 // M-Lab 지표 id → 캐시 필드
-const MLAB_FIELD: Record<string, 'thr' | 'rtt' | 'loss' | 'hd' | 'k4'> = {
+const MLAB_FIELD: Record<string, 'thr' | 'rtt' | 'loss' | 'hd' | 'k4' | 'rttFloor' | 'thrPeak'> = {
   meanThroughput: 'thr', minRtt: 'rtt', lossRate: 'loss',
   // HD/4K 스트리밍 도달률 — M-Lab 다운로드 처리량의 ≥5/≥15Mbps 비율(%)에서 파생.
   nfHd: 'hd', nf4k: 'k4',
+  // 지연 하한(MinRTT 하위10% 평균) / 피크 처리량(상위10% 평균) — 같은 컬럼 파생(추가 비용 0).
+  latencyFloor: 'rttFloor', peakCapacity: 'thrPeak',
 };
 
 // Netflix 캐시(collect-netflix.ts): perIsp[ispId] = [{ym:'YYYYMM', speed}] (월별). nfSpeedIndex에 사용.
@@ -93,7 +95,9 @@ const BASE: Record<string, { good: number; spread: number; busy: number }> = {
   loadedLatency: { good: 22, spread: 0.4, busy: 0.9 },   // 부하 중 지연: idle보다 높고 최번시에 크게 상승
   p25Throughput: { good: 600, spread: 0.2, busy: -0.28 }, // 하위 25% 처리량: 평균보다 낮고 최번시에 더 민감
   meanThroughput: { good: 920, spread: 0.18, busy: -0.22 },
+  peakCapacity: { good: 1500, spread: 0.15, busy: -0.15 }, // 상위10% 평균: 평균보다 높고 부하 영향 작음
   minRtt: { good: 6, spread: 0.2, busy: 0.15 },
+  latencyFloor: { good: 4, spread: 0.12, busy: 0.08 }, // 하위10% 평균: 최소RTT보다 낮은 '지연 바닥'
   lossRate: { good: 0.1, spread: 1.0, busy: 2.0 },
   ipv6: { good: 40, spread: 0.1, busy: 0 }, // IPv6 채택률(%): 시간대 무관, 지역별 차이
   dnsResponse: { good: 18, spread: 0.3, busy: 0.4 }, // DNS 응답시간(ms): 낮을수록 좋음
@@ -102,7 +106,7 @@ const BASE: Record<string, { good: number; spread: number; busy: number }> = {
   nf4k: { good: 70, spread: 0.06, busy: -0.3 },
   nfSpeedIndex: { good: 3.6, spread: 0.08, busy: -0.15 },
 };
-const HIGHER_IS_BETTER = new Set(['bandwidth', 'p25Throughput', 'meanThroughput', 'ipv6', 'nfHd', 'nf4k', 'nfSpeedIndex']);
+const HIGHER_IS_BETTER = new Set(['bandwidth', 'p25Throughput', 'meanThroughput', 'peakCapacity', 'ipv6', 'nfHd', 'nf4k', 'nfSpeedIndex']);
 // 0~100%로 상한이 있는 지표 (생성 시 100 초과 클리핑).
 const PCT_CAPPED = new Set(
   METRICS.filter((m) => m.unit === '%').map((m) => m.id)

@@ -74,20 +74,29 @@ const CAP_GB = 50; // 쿼리당 스캔 상한(안전). 초과 시 중단 — 의
 // 한 티어 쿼리: bucketExpr(버킷 시작 ms), days(기간 상한)
 function buildQuery(bucketExpr: string, days: number): string {
   // hd/k4: 다운로드 처리량이 Netflix 권장 HD(5Mbps)/4K(15Mbps) 이상인 측정의 비율(%).
-  // 같은 쿼리 안에서 COUNTIF로 파생 → 추가 스캔 비용 0.
-  return `SELECT client.Network.ASNumber AS asn,
-  ${bucketExpr} AS bucket,
-  APPROX_QUANTILES(a.MeanThroughputMbps, 100)[OFFSET(50)] AS thr,
-  APPROX_QUANTILES(a.MinRTT, 100)[OFFSET(50)] AS rtt,
-  AVG(a.LossRate) AS loss,
-  COUNTIF(a.MeanThroughputMbps >= 5) AS hd_n,
-  COUNTIF(a.MeanThroughputMbps >= 15) AS k4_n,
-  COUNT(*) AS n
-FROM \`measurement-lab.ndt.ndt7\`
-WHERE date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY) AND CURRENT_DATE()
-  AND client.Network.ASNumber IN (${ASN_LIST.join(', ')})
-  AND a.MeanThroughputMbps IS NOT NULL
-GROUP BY asn, bucket`;
+  // rtt_floor/thr_peak: MinRTT 하위10% 평균 / MeanThroughputMbps 상위10% 평균.
+  //   분위수 스케치(APPROX_QUANTILES 100분할)의 꼬리 오프셋 평균으로 단일 패스 근사 → 추가 스캔 비용 0.
+  //   (이미 스캔하는 a.MinRTT / a.MeanThroughputMbps 컬럼만 사용)
+  return `SELECT asn, bucket, thr, rtt, loss, hd_n, k4_n, n,
+  (SELECT AVG(v) FROM UNNEST(rtt_q) v WITH OFFSET o WHERE o <= 10) AS rtt_floor,
+  (SELECT AVG(v) FROM UNNEST(thr_q) v WITH OFFSET o WHERE o >= 90) AS thr_peak
+FROM (
+  SELECT client.Network.ASNumber AS asn,
+    ${bucketExpr} AS bucket,
+    APPROX_QUANTILES(a.MeanThroughputMbps, 100)[OFFSET(50)] AS thr,
+    APPROX_QUANTILES(a.MinRTT, 100)[OFFSET(50)] AS rtt,
+    AVG(a.LossRate) AS loss,
+    COUNTIF(a.MeanThroughputMbps >= 5) AS hd_n,
+    COUNTIF(a.MeanThroughputMbps >= 15) AS k4_n,
+    COUNT(*) AS n,
+    APPROX_QUANTILES(a.MinRTT, 100) AS rtt_q,
+    APPROX_QUANTILES(a.MeanThroughputMbps, 100) AS thr_q
+  FROM \`measurement-lab.ndt.ndt7\`
+  WHERE date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY) AND CURRENT_DATE()
+    AND client.Network.ASNumber IN (${ASN_LIST.join(', ')})
+    AND a.MeanThroughputMbps IS NOT NULL
+  GROUP BY asn, bucket
+)`;
 }
 
 const TIERS = [
@@ -115,7 +124,7 @@ async function main() {
   }
   console.log(`[mlab] 총 예상 ${(estTotal / 1e9).toFixed(2)}GB/회 → 일1회 가정 월 ~${(estTotal / 1e9 * 30).toFixed(0)}GB (무료 1000GB/월 대비)`);
 
-  // perIsp[ispId][tier] = { thr: TierMetricMap, rtt:..., loss:..., hd:..., k4:... }
+  // perIsp[ispId][tier] = { thr, rtt, loss, hd, k4, rttFloor, thrPeak }
   const perIsp: Record<string, Record<string, Record<string, TierMetricMap>>> = {};
   let totalBytes = 0;
 
@@ -125,21 +134,22 @@ async function main() {
     console.log(`[mlab] ${t.key}: rows=${rows.length} scanned=${(bytes / 1e9).toFixed(2)}GB`);
     // 다중 ASN ISP 합산: thr/rtt/loss는 n 가중평균, hd/k4는 카운트 합산.
     // 한 ASN이 여러 ISP entry(통합 lgu + lgu-3786 등)에 동시 기여 → 1:다.
-    const acc: Record<string, Record<string, Record<number, { sw: number; n: number; thr: number; rtt: number; loss: number; hd: number; k4: number }>>> = {};
+    const acc: Record<string, Record<string, Record<number, { sw: number; n: number; thr: number; rtt: number; loss: number; hd: number; k4: number; rf: number; tp: number }>>> = {};
     for (const r of rows) {
       const asn = Number(r[0]); const bucket = Number(r[1]);
       const thr = Number(r[2]); const rtt = Number(r[3]); const loss = Number(r[4]);
       const hd = Number(r[5]); const k4 = Number(r[6]); const n = Number(r[7]);
+      const rf = Number(r[8]); const tp = Number(r[9]); // rtt_floor(하위10% 평균), thr_peak(상위10% 평균)
       const isps = ASN_TO_ISPS[asn]; if (!isps || !n) continue;
       for (const isp of isps) {
         acc[isp] ??= {}; acc[isp][t.key] ??= {};
-        const cur = acc[isp][t.key][bucket] ??= { sw: 0, n: 0, thr: 0, rtt: 0, loss: 0, hd: 0, k4: 0 };
+        const cur = acc[isp][t.key][bucket] ??= { sw: 0, n: 0, thr: 0, rtt: 0, loss: 0, hd: 0, k4: 0, rf: 0, tp: 0 };
         cur.sw += n; cur.n += n; cur.thr += thr * n; cur.rtt += rtt * n; cur.loss += loss * n;
-        cur.hd += hd; cur.k4 += k4;
+        cur.hd += hd; cur.k4 += k4; cur.rf += rf * n; cur.tp += tp * n;
       }
     }
     for (const isp of Object.keys(acc)) {
-      perIsp[isp] ??= {}; perIsp[isp][t.key] = { thr: {}, rtt: {}, loss: {}, hd: {}, k4: {} };
+      perIsp[isp] ??= {}; perIsp[isp][t.key] = { thr: {}, rtt: {}, loss: {}, hd: {}, k4: {}, rttFloor: {}, thrPeak: {} };
       for (const [bucket, c] of Object.entries(acc[isp][t.key])) {
         const w = c.sw || 1;
         perIsp[isp][t.key].thr[bucket] = { v: round(c.thr / w), n: c.n };
@@ -147,6 +157,8 @@ async function main() {
         perIsp[isp][t.key].loss[bucket] = { v: round((c.loss / w) * 100), n: c.n }; // LossRate(0~1) → %
         perIsp[isp][t.key].hd[bucket] = { v: round((c.hd / c.n) * 100), n: c.n }; // HD(≥5Mbps) 도달률 %
         perIsp[isp][t.key].k4[bucket] = { v: round((c.k4 / c.n) * 100), n: c.n }; // 4K(≥15Mbps) 도달률 %
+        perIsp[isp][t.key].rttFloor[bucket] = { v: round(c.rf / w), n: c.n }; // MinRTT 하위10% 평균(지연 하한)
+        perIsp[isp][t.key].thrPeak[bucket] = { v: round(c.tp / w), n: c.n }; // 처리량 상위10% 평균(관측 피크)
       }
     }
   }
