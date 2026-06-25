@@ -37,17 +37,19 @@ const DASH_BY_ISP: Record<string, number> = {
   lgu: 0, 'lgu-3786': 0, 'lgu-17858': 0, kt: 6, skb: 2,
 };
 
-// 데이터 최대값 위로 ~8% 여유를 두고 '깔끔한' 상한으로 올림(모든 차트 공통).
-// 고정 상한이 아니라 데이터에 따라 매번 달라져, 값이 작을 땐 공백을 줄이고 스파이크가 크면 자동으로 넓어진다.
-// 단계가 촘촘해(1.5·2.5·3·6…) 예: 216→250, 600→650 처럼 데이터에 바짝 붙는다(216이 500으로 튀지 않음).
+// v 이상의 '깔끔한'(1·1.2·1.5·2·2.5·3…) 수로 올림.
 const NICE_STEPS = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
-function niceCeil(v: number): number | undefined {
-  if (!Number.isFinite(v) || v <= 0) return undefined;
-  const pad = v * 1.08;
-  const mag = Math.pow(10, Math.floor(Math.log10(pad)));
-  const n = pad / mag;
-  const step = NICE_STEPS.find((s) => n <= s) ?? 10;
+function niceCeil(v: number): number {
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / mag;
+  const step = NICE_STEPS.find((s) => n <= s + 1e-9) ?? 10;
   return Math.round(step * mag * 1000) / 1000;
+}
+// 차트 Y축 상한: 데이터 최대값이 축의 ~80%가 되도록(=max/0.8) 잡은 뒤 깔끔한 수로 올림.
+// 예: 데이터 max 4 → 4/0.8=5 → 5. 화면에 보이는 구간의 max만 사용(티어 전체 X).
+function axisMaxFor(dataMax: number): number | undefined {
+  if (!Number.isFinite(dataMax) || dataMax <= 0) return undefined;
+  return niceCeil(dataMax / 0.8);
 }
 
 // 터치 기기(모바일/태블릿) 감지 — 차트가 스크롤 제스처를 줌으로 가로채지 않도록 줌/팬을 끈다.
@@ -85,13 +87,12 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
   const maxMs = axis && axis.length ? axis[axis.length - 1] : sinceMs;
   const effSince = FIXED180 ? maxMs - 180 * 86400000 : sinceMs;
 
-  const { series, colors, discrete, dashArray, maxY, lastLiveMs } = useMemo(() => {
+  const { series, colors, discrete, dashArray, lastLiveMs } = useMemo(() => {
     const series: { name: string; data: DataPoint[] }[] = [];
     const colors: string[] = [];
     const dashArray: number[] = [];
     const discrete: { seriesIndex: number; dataPointIndex: number; size: number; fillColor: string; strokeColor: string }[] = [];
     let si = 0;
-    let maxY = -Infinity; // 실제 데이터 최대값 — Y축을 여기에 맞춰 동적으로 잡는다(고정 상한 X).
     let lastLiveMs = -Infinity; // 값이 있는 가장 최신 시점 — M-Lab 지표의 X축을 여기서 멈추는 데 사용.
     for (const ispId of effectiveIsps(selectedIsps)) {
       const base = getTierPoints(data, ispId, metricId, tier);
@@ -109,13 +110,12 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
       colors.push(color);
       dashArray.push(DASH_BY_ISP[ispId] ?? DASH_PATTERN[si % DASH_PATTERN.length]); // ISP 고정 또는 인덱스 스타일
       pts.forEach((p, di) => {
-        if (p.v != null && p.v > maxY) maxY = p.v;
         if (p.v != null && p.t > lastLiveMs) lastLiveMs = p.t;
         if (p.low) discrete.push({ seriesIndex: si, dataPointIndex: di, size: 5, fillColor: '#ffb300', strokeColor: color });
       });
       si++;
     }
-    return { series, colors, discrete, dashArray, maxY, lastLiveMs: Number.isFinite(lastLiveMs) ? lastLiveMs : null };
+    return { series, colors, discrete, dashArray, lastLiveMs: Number.isFinite(lastLiveMs) ? lastLiveMs : null };
   }, [data, selectedIsps, metricId, tier, viewDef, sinceMs, colorIndex]);
 
   const chrome = CHROME[theme];
@@ -125,6 +125,16 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
   const mlabCap = !!metric.mlabBased && lastLiveMs != null && lastLiveMs < maxMs;
   const xMax = mlabCap ? (lastLiveMs as number) : maxMs;
   const xMin = mlabCap ? (lastLiveMs as number) - RANGES[range].ms : effSince;
+
+  // Y축 상한 계산용 데이터 최대값은 '현재 화면에 보이는 X구간 [xMin,xMax]' 안에서만 구한다.
+  // (티어 전체에서 구하면 화면 밖 스파이크가 축을 끌어올려 그래프가 작아 보임.)
+  const maxY = useMemo(() => {
+    let m = -Infinity;
+    for (const s of series) for (const p of s.data) {
+      if (p.y != null && p.x >= xMin && p.x <= xMax && p.y > m) m = p.y;
+    }
+    return m;
+  }, [series, xMin, xMax]);
 
   const options: ApexOptions = useMemo(() => ({
     chart: {
@@ -144,8 +154,8 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
     xaxis: { type: 'datetime', labels: { datetimeUTC: true }, min: xMin, max: xMax },
     yaxis: {
       title: { text: `${metric.name} (${metric.unit})` },
-      // 모든 차트: 데이터 최대값에 맞춘 동적 상한(고정 X). 값에 바짝 붙여 세부 변화를 더 크게 보여 준다.
-      ...(niceCeil(maxY) != null ? { max: niceCeil(maxY), min: 0 } : {}),
+      // 모든 차트: 보이는 구간의 데이터 최대값이 축의 ~80%가 되도록 상한을 잡는다(세부 변화를 더 크게).
+      ...(axisMaxFor(maxY) != null ? { max: axisMaxFor(maxY), min: 0 } : {}),
       labels: { formatter: (v: number) => (v == null ? '' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })) },
     },
     grid: { borderColor: chrome.grid, strokeDashArray: 3 },
