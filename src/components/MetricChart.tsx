@@ -45,11 +45,34 @@ function niceCeil(v: number): number {
   const step = NICE_STEPS.find((s) => n <= s + 1e-9) ?? 10;
   return Math.round(step * mag * 1000) / 1000;
 }
-// 차트 Y축 상한: 데이터 최대값이 축의 ~80%가 되도록(=max/0.8) 잡은 뒤 깔끔한 수로 올림.
-// 예: 데이터 max 4 → 4/0.8=5 → 5. 화면에 보이는 구간의 max만 사용(티어 전체 X).
-function axisMaxFor(dataMax: number): number | undefined {
-  if (!Number.isFinite(dataMax) || dataMax <= 0) return undefined;
-  return niceCeil(dataMax / 0.8);
+// 격자 간격용 '깔끔한' 단위(1·2·5·10…).
+function niceStep(x: number): number {
+  if (x <= 0) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(x)));
+  const n = x / mag;
+  const s = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return s * mag;
+}
+const round3 = (x: number) => Math.round(x * 1000) / 1000;
+
+// 보이는 구간의 데이터 [lo,hi]에 맞춰 Y축 [min,max] 산정.
+//  - pctFull(가능률 등): 0~100 고정(100% 초과 불가).
+//  - 데이터가 0 근처까지 내려오면 0 기준, 상한만 데이터 바로 위로(과한 여백 X).
+//  - 데이터가 0에서 멀리 떨어진 좁은 띠(예: RTT 10~13ms)면 위·아래를 모두 띠에 바짝 붙임.
+function computeYRange(
+  lo: number, hi: number, pctFull: boolean, hardMax: number,
+): { min: number; max: number } | null {
+  if (pctFull) return { min: 0, max: 100 };
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= 0) return null;
+  if (hi <= lo) return { min: 0, max: Math.min(niceCeil(hi * 1.1) || 1, hardMax) };
+  const range = hi - lo;
+  // 0에서 데이터까지 거리가 데이터 분포폭보다 작으면 0 기준으로(낮은 값 지표).
+  if (lo <= range) return { min: 0, max: Math.min(niceCeil(hi * 1.05), hardMax) };
+  // 0에서 먼 좁은 띠 → 위·아래를 격자 단위로 띠에 바짝(빈 공간 최소화).
+  const step = niceStep(range / 3);
+  const min = Math.max(0, Math.floor((lo - range * 0.25) / step) * step);
+  const max = Math.min(Math.ceil((hi + range * 0.25) / step) * step, hardMax);
+  return { min: round3(min), max: round3(max) };
 }
 
 // 터치 기기(모바일/태블릿) 감지 — 차트가 스크롤 제스처를 줌으로 가로채지 않도록 줌/팬을 끈다.
@@ -126,15 +149,15 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
   const xMax = mlabCap ? (lastLiveMs as number) : maxMs;
   const xMin = mlabCap ? (lastLiveMs as number) - RANGES[range].ms : effSince;
 
-  // Y축 상한 계산용 데이터 최대값은 '현재 화면에 보이는 X구간 [xMin,xMax]' 안에서만 구한다.
+  // Y축 산정용 데이터 min/max는 '현재 화면에 보이는 X구간 [xMin,xMax]' 안에서만 구한다.
   // (티어 전체에서 구하면 화면 밖 스파이크가 축을 끌어올려 그래프가 작아 보임.)
-  const maxY = useMemo(() => {
-    let m = -Infinity;
+  const yRange = useMemo(() => {
+    let lo = Infinity, hi = -Infinity;
     for (const s of series) for (const p of s.data) {
-      if (p.y != null && p.x >= xMin && p.x <= xMax && p.y > m) m = p.y;
+      if (p.y != null && p.x >= xMin && p.x <= xMax) { if (p.y < lo) lo = p.y; if (p.y > hi) hi = p.y; }
     }
-    return m;
-  }, [series, xMin, xMax]);
+    return computeYRange(lo, hi, !!metric.pctFull, metric.hard.max);
+  }, [series, xMin, xMax, metric.pctFull, metric.hard.max]);
 
   const options: ApexOptions = useMemo(() => ({
     chart: {
@@ -154,8 +177,8 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
     xaxis: { type: 'datetime', labels: { datetimeUTC: true }, min: xMin, max: xMax },
     yaxis: {
       title: { text: `${metric.name} (${metric.unit})` },
-      // 모든 차트: 보이는 구간의 데이터 최대값이 축의 ~80%가 되도록 상한을 잡는다(세부 변화를 더 크게).
-      ...(axisMaxFor(maxY) != null ? { max: axisMaxFor(maxY), min: 0 } : {}),
+      // 보이는 구간 데이터에 바짝 붙는 동적 축(가능률은 0~100 고정, 0에서 먼 좁은 띠는 위·아래 모두 타이트).
+      ...(yRange ? { min: yRange.min, max: yRange.max } : {}),
       labels: { formatter: (v: number) => (v == null ? '' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })) },
     },
     grid: { borderColor: chrome.grid, strokeDashArray: 3 },
@@ -198,7 +221,7 @@ export default function MetricChart({ metricId, data, selectedIsps, view, range,
         return `<div class="qtt"><div class="qtt-title">${when}</div>${blocks}</div>`;
       },
     },
-  }), [theme, colors, discrete, dashArray, metric, chrome, xMin, xMax, FIXED180, maxY]);
+  }), [theme, colors, discrete, dashArray, metric, chrome, xMin, xMax, FIXED180, yRange]);
 
   if (selectedIsps.length === 0) {
     return <div className="empty">{T.emptyIsp}</div>;

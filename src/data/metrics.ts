@@ -32,6 +32,7 @@ export interface MetricDef {
   //  (1) 차트에 지연 공지 표시  (2) X축을 '최신 M-Lab 데이터' 지점에서 멈춤(현재까지 끌고 가지 않음).
   // nfHd/nf4k는 출처가 netflix지만 실제 값은 M-Lab 처리량에서 파생되므로 동일하게 적용.
   mlabBased?: boolean;
+  pctFull?: boolean; // 0~100% 완료율(가능률 등) — Y축을 0~100 고정(100% 초과 불가).
   cite: MetricCite; // 근거(등급/출처) — 모든 지표 필수(형평성). 차트 하단에 표시.
 }
 
@@ -87,9 +88,9 @@ export const METRICS: MetricDef[] = [
     cite: { grade: 'B', basis: 'M-Lab ndt7 TCP_INFO: 재전송 카운터 기반 손실률 집계', url: 'https://www.measurementlab.net/tests/ndt/ndt7/' } },
   // 스트리밍 가능률: M-Lab 처리량이 권장 비트레이트 이상인 측정의 비율(%). Netflix가 측정한 값이 아니라
   // M-Lab 처리량을 Netflix 공식 권장값으로 임계 처리한 '파생(grade C)' 지표 → 출처는 M-Lab.
-  { id: 'nfHd', name: 'HD 스트리밍 가능률 (≥5Mbps)', source: 'mlab', unit: '%', higherIsBetter: true, hard: { min: 0, max: 100 }, grades: NF_GRADES, mlabBased: true,
+  { id: 'nfHd', name: 'HD 스트리밍 가능률 (≥5Mbps)', source: 'mlab', unit: '%', higherIsBetter: true, hard: { min: 0, max: 100 }, grades: NF_GRADES, mlabBased: true, pctFull: true,
     cite: { grade: 'C', basis: 'M-Lab 처리량 실측 × Netflix 공식 권장(Full HD 1080p = 5Mbps 이상)의 파생 비율 — Netflix 측정값 아님', url: 'https://help.netflix.com/en/node/306' } },
-  { id: 'nf4k', name: '4K 스트리밍 가능률 (≥15Mbps)', source: 'mlab', unit: '%', higherIsBetter: true, hard: { min: 0, max: 100 }, mlabBased: true,
+  { id: 'nf4k', name: '4K 스트리밍 가능률 (≥15Mbps)', source: 'mlab', unit: '%', higherIsBetter: true, hard: { min: 0, max: 100 }, mlabBased: true, pctFull: true,
     cite: { grade: 'C', basis: 'M-Lab 처리량 실측 × Netflix 공식 권장(Ultra HD 4K = 15Mbps 이상)의 파생 비율 — Netflix 측정값 아님', url: 'https://help.netflix.com/en/node/306' } },
 
   // --- Netflix 스트리밍 품질 (Netflix가 직접 공개한 값) ---
